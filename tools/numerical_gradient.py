@@ -19,6 +19,11 @@ numerical_gradient_check_scalar(function, input x)
 
 """
 
+# Given two matrices that should be similar due to numerical innacuracies:
+# Compute the norm(grad-numgrad) / norm(grad+numgrad). This should give us ~< 1e-9.
+def norm_loss(grad, numgrad):
+    return np.linalg.norm(grad-numgrad) / np.linalg.norm(grad+numgrad)
+
 # For pure scalars -> scalars. R -> R
 def numerical_gradient_check_scalar(function, x, eps = 1e-5):
     return (function(x+eps) - function(x-eps)) / (2*eps)
