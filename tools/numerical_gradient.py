@@ -17,39 +17,23 @@ dF/dx_i = (f([x_0, x_1, ... x_i+epsilon ... x_n]) - f([x_0, x_1, ... x_i-epsilon
 Functions:
 numerical_gradient_check_scalar(function, input x)
 
-
 """
 
 # For pure scalars -> scalars. R -> R
 def numerical_gradient_check_scalar(function, x, eps = 1e-5):
     return (function(x+eps) - function(x-eps)) / (2*eps)
 
-# For multivariable -> scalars. R^n -> R
+# For multivariable -> multivariable. R^n -> R^n, where n can be 1
 def numerical_gradient_check_multivar(function, x, eps = 1e-5):
     # Unroll the vector.
     dims = x.shape
     x = x.ravel()
-    grad = np.zeros_like(x, dtype=np.float32)
-    epsilon_map = np.zeros_like(x, dtype=np.float32)
-    for idx, num in enumerate(x):
-        epsilon_map[idx] = eps
-        deriv = (function(x+epsilon_map) - function(x-epsilon_map)) / (2*eps)
-        grad[idx] = deriv
-        epsilon_map[idx] = 0
-    
-    return grad.reshape(dims)
-
-# For multivariable -> multivariable. R^n -> R^n
-def numerical_gradient_check_multivar_field(function, x, eps = 1e-5):
-    # Unroll the vector.
-    dims = x.shape
     grad = np.zeros_like(x)
-    x = x.ravel()
     epsilon_map = np.zeros_like(x, dtype=np.float32)
     for idx, num in enumerate(x):
         epsilon_map[idx] = eps
         deriv = (function((x+epsilon_map).reshape(dims)) - function((x-epsilon_map).reshape(dims))) / (2*eps)
-        grad += deriv
+        grad[idx] += np.sum(deriv)
         epsilon_map[idx] = 0
     
-    return grad
+    return grad.reshape(dims)
