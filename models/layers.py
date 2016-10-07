@@ -138,4 +138,61 @@ def rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout):
     print dW_hh.shape, dW_xh.shape, dprev_h.shape, dx.shape, db.shape
     return dW_hh, dW_xh, dprev_h, dx, db
     
+def affine_forward(h, W_hy, b):
+    """
+    Given the following parameters: h, W_hy, b
+    
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    h = (N,H)
+    W_hy = (H,D)
+    b = (D,)
+    
+    This is the good part. We're going to do an affine_forward to 
+    get our hidden states into actual word vectors. It is essentially
+    a large one-hot vector that represents a specific word in the D 
+    number of words we have in the map.
+    
+    We need an affine_forward and not just any ordinary transform/skew/rotate,
+    because we want to drag the vector off the origin for more variety.
+    
+    Returns (N,D)
+    """
+    return h.dot(W_hy) + b
+
+def affine_backward(h, W_hy, b, dout):
+    """
+    Given the following parameters: h, W_hy, b, dout
+    
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    h = (N,H)
+    W_hy = (H,D)
+    b = (D,)
+    dout = (N,D)
+    
+    **************************************************
+    Note: We see that, for general rule of thumb, 
+    A*B = C where A,B,C are matrices:
+    
+    dA = dC*B.T
+    dB = A.T*dC
+    **************************************************
+    
+    dh = dout * W_hy.T = (N,D) * (D,H) = (N,H)
+    dW_hy = h.T * dout = (H,N) * (N,D) = (H,D)
+    db = sum(axis=0) of dout
+    """
+    dh = dout.dot(W_hy.T)
+    dW_hy = (h.T).dot(dout)
+    db = np.sum(dout, axis = 0)
+    
+    return dh, dW_hy, db
+    
     
