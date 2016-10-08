@@ -194,5 +194,80 @@ def affine_backward(h, W_hy, b, dout):
     db = np.sum(dout, axis = 0)
     
     return dh, dW_hy, db
+
+def softmax(x, y):
+    """
+    Given the following parameters: x, y
     
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    # In the case of the rnn #
+    x = (N,D)
+    y = (N,) # the idx for the correct word.
+    y can be used to get the correct indices: [np.range(1,n), y] = 1 => (N,D)
+    
+    return a single number, which is the cost of the current function.
+    
+    ~~~For LOSS~~~
+    Step 1. Affine transform (in another layer):
+    affine = x * W_x + b = (N,D)
+    
+    Step 3. Perform the exponent operation on affine:
+    numerator = np.exp(affine[np.range(1,n), y])
+    denominator = np.exp(np.sum(affine))
+    
+    Step 4. Perform the negative log distribution function on exponent result
+    loss = -np.log(numerator/denominator)
+    
+    ~~~For dx, dW_x, and db~~~
+    Step 1. 
+    dlog = 1/(dout)
+    db = np.sum(np.exp(affine))
+    """
+    
+    N,D = x.shape
+
+    ### For LOSS ###
+    y_mask = np.zeros_like(x, int)
+    y_mask[np.arange(N), y] = 1
+    x_exp = np.exp(x)
+    numerator = np.sum(x_exp * y_mask, axis=1)
+    denominator = np.sum(x_exp, axis=1)
+    softmax = -1*np.log(numerator/denominator)
+    loss = np.sum(softmax)/N
+    
+    ### For dx ###
+    dJ = 1 # Every derivative backflow starts at 1
+    
+    # The derivative splits here, so we have to call upstream numerator derivative dJ1,
+    # and the downstream denominator derivative dJ2
+    dJ1 = np.ones((N,D), float)/(denominator[:, np.newaxis] * N)
+    dJ2 = np.array(y_mask, float)/(numerator[:, np.newaxis] * N)
+    dJ = (dJ1 - dJ2)*x_exp    
+    
+    return loss, dJ
+
+def softmax_loss_correct(x, y):
+    """
+      Computes the loss and gradient for softmax classification.
+      Inputs:
+      - x: Input data, of shape (N, C) where x[i, j] is the score for the jth class
+        for the ith input.
+      - y: Vector of labels, of shape (N,) where y[i] is the label for x[i] and
+        0 <= y[i] < C
+      Returns a tuple of:
+      - loss: Scalar giving the loss
+      - dx: Gradient of the loss with respect to x
+    """
+    probs = np.exp(x)
+    probs /= np.sum(probs, axis=1, keepdims=True)
+    N = x.shape[0]
+    loss = -np.sum(np.log(probs[np.arange(N), y])) / N
+    dx = probs.copy()
+    dx[np.arange(N), y] -= 1
+    dx /= N
+    return loss, dx
     
