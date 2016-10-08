@@ -197,6 +197,11 @@ def affine_backward(h, W_hy, b, dout):
 
 def softmax(x, y):
     """
+    Softmax is a probabilistic cost function, whereas the domain of the function gets squashed
+    to [0,1] and the cost is restrained from [0, inf).
+    We are assuming a log probability given a specific event(x_yi) happening given all other events.
+    The other events should be small, while the chosen event(the one with the correct label) is high.
+    
     Given the following parameters: x, y
     
     Constants:
@@ -209,23 +214,24 @@ def softmax(x, y):
     y = (N,) # the idx for the correct word.
     y can be used to get the correct indices: [np.range(1,n), y] = 1 => (N,D)
     
-    return a single number, which is the cost of the current function.
+    returns: single number(which is the cost of the current function) + the derivative.
     
     ~~~For LOSS~~~
     Step 1. Affine transform (in another layer):
     affine = x * W_x + b = (N,D)
     
     Step 3. Perform the exponent operation on affine:
-    numerator = np.exp(affine[np.range(1,n), y])
-    denominator = np.exp(np.sum(affine))
+    affine = np.exp(affine)
+    numerator = affine[np.range(1,n), y]
+    denominator = np.sum(affine)
     
     Step 4. Perform the negative log distribution function on exponent result
     loss = -np.log(numerator/denominator)
     
-    ~~~For dx, dW_x, and db~~~
-    Step 1. 
-    dlog = 1/(dout)
-    db = np.sum(np.exp(affine))
+    Step 5. If we have multiple samples, the result is the average of all scores in each D dimension.
+    loss = 1/N*np.sum(loss)
+    
+    The derivative must be computed by hand ;)
     """
     
     N,D = x.shape
@@ -250,24 +256,64 @@ def softmax(x, y):
     
     return loss, dJ
 
-def softmax_loss_correct(x, y):
+def SVM(x, y):
     """
-      Computes the loss and gradient for softmax classification.
-      Inputs:
-      - x: Input data, of shape (N, C) where x[i, j] is the score for the jth class
-        for the ith input.
-      - y: Vector of labels, of shape (N,) where y[i] is the label for x[i] and
-        0 <= y[i] < C
-      Returns a tuple of:
-      - loss: Scalar giving the loss
-      - dx: Gradient of the loss with respect to x
-    """
-    probs = np.exp(x)
-    probs /= np.sum(probs, axis=1, keepdims=True)
-    N = x.shape[0]
-    loss = -np.sum(np.log(probs[np.arange(N), y])) / N
-    dx = probs.copy()
-    dx[np.arange(N), y] -= 1
-    dx /= N
-    return loss, dx
+    SVM, or Support Vector Machine is a linear model that tries to separate
+    the score of the correct label from the rest with the optimized DELTA space
+    between them. If they are outside of the DELTA gap, then the loss should be 0.
+    Otherwise, it is a linear loss. (We also call this a hinge loss)
     
+    Given the following parameters: x, y
+    
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    # In the case of the rnn #
+    x = (N,D)
+    y = (N,) # the idx for the correct word.
+    y can be used to get the correct indices: [np.range(1,n), y] = 1 => (N,D)
+    
+    returns: single number(which is the cost of the current function) + the derivative.
+    
+    ~~~For LOSS~~~
+    Step 1. affine transform: refer to softmax
+    
+    Step 2. Subtract all vectors on that row with the correct labels score and add a delta.
+    correct_score = affine[np.range(1,n), y]
+    affine -= correct_score
+    mask = np.ones_like(affine)
+    mask[np.range(1,n), y] = 0
+    affine += mask
+    
+    Step 3. The scores that are negative(if correct score > (incorrect score + DELTA)) are hinged to 0
+    loss = max(affine, 0)
+    
+    Step 4. 
+    If we have multiple samples, the result is the average of all scores in each D dimension.
+    loss = 1/N*np.sum(loss)
+    
+    The derivative must be computed by hand ;)
+    """
+    N,D = x.shape
+    
+
+    ### For LOSS ###
+    correct_scores = x[np.arange(N), y]
+    x -= correct_scores[:, np.newaxis]
+    mask = np.ones_like(x)
+    mask[np.arange(N), y] = 0
+    x += mask
+    
+    loss = np.maximum(x, 0)
+    loss = np.sum(loss) / N
+    
+    ### For dx ###
+    dJ = 1 # Every derivative backflow starts at 1
+    dJ_mask = np.ones((N,D), float)
+    dJ_mask[np.where(x < 0)] = 0
+    dJ = dJ_mask / N * dJ
+    dJ += (-1 * (np.ones_like(x) - mask) * D * dJ)
+    
+    return loss, dJ
