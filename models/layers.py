@@ -135,13 +135,12 @@ def rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout):
     dx = dout.dot(W_xh.T)
     db = np.sum(dout, axis = 0)
     
-    print dW_hh.shape, dW_xh.shape, dprev_h.shape, dx.shape, db.shape
     return dW_hh, dW_xh, dprev_h, dx, db
-    
+
 def rnn_forward(x, W_xh, W_hh, b, h0=None):
     """
-    UNTESTED
     Given the following parameters: 
+    h0 = (N,H)
     W_hh = (H,H)
     x = (N,T,D)
     W_xh = (D,H)
@@ -164,31 +163,46 @@ def rnn_forward(x, W_xh, W_hh, b, h0=None):
     
     for i in xrange(T):
         h[:,i,:] = rnn_step_forward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b)
-    
-    
-def rnn_backward(x, W_xh, W_hh, b, dout):
+    return h
+
+def rnn_backward(x, W_xh, W_hh, b, h0, h, dout):
     """
-    UNTESTED
     Given the following parameters:
     W_xh = (H,H)
     x = (N,T,D)
     W_xh = (D,H)
     b = (H,)
+    h = (N,T,H)
     dout = (N,T,H)
     
     dW_hh, dW_xh, dh[:,i-1,:], dx, db += rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout)
     
     """
+    N,T,D = x.shape
+    H,_ = W_hh.shape
     dW_hh = np.zeros_like(W_hh)
     dW_xh = np.zeros_like(W_xh)
-    dh = np.zeros_like(dout)
+    dh = dout
     dx = np.zeros_like(x)
     db = np.zeros_like(b)
+    h[:,-1,:] = h0
+    
+    # rnn_step_backward args: prev_h, W_hh, x, W_xh, b, dout
     for i in reversed(xrange(T)):
-        dW_hh, dW_xh, dh_temp, dx[:,i,:], db += rnn_step_backward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b, dout)
+        # Because python does not allow multiple += assignments via unpacked tuples
+        # at the same time, we have to assign temporary values in order for this
+        # to work properly.
+        _dW_hh, _dW_xh, _dh, _dx, _db = rnn_step_backward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b, dh[:,i,:])
         if i - 1 >= 0:
-            dh[:,i-1,:] = dh_temp
-    return dW_hh, dW_xh, dh, dx, db
+            dh[:,i-1,:] += _dh
+        else:
+            dh0 = _dh
+        dW_hh += _dW_hh
+        dW_xh += _dW_xh
+        dx[:,i,:] += _dx
+        db += _db
+
+    return dW_hh, dW_xh, dx, db, dh0
         
 def affine_forward(h, W_hy, b):
     """
