@@ -36,7 +36,7 @@ def word_embedding_forward(words, x):
     # We took a 1xV vector and put it where the index of x used to be.
     # x[i,j] = words[x[i,j]]
     
-def word_embedding_backward(dout, words_dim, x):
+def word_embedding_backward(dout, words, x):
     """ 
     Given the following parameters: Words, x, dout
     
@@ -56,7 +56,7 @@ def word_embedding_backward(dout, words_dim, x):
     
     returns a (D,V) to the Words matrix.
     """
-    
+    words_dim = words.shape
     dW = np.zeros(words_dim)
     np.add.at(dW, x, dout)
     return dW
@@ -138,6 +138,58 @@ def rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout):
     print dW_hh.shape, dW_xh.shape, dprev_h.shape, dx.shape, db.shape
     return dW_hh, dW_xh, dprev_h, dx, db
     
+def rnn_forward(x, W_xh, W_hh, b, h0=None):
+    """
+    UNTESTED
+    Given the following parameters: 
+    W_hh = (H,H)
+    x = (N,T,D)
+    W_xh = (D,H)
+    b = (H,)
+    
+    We make h = (N,T,H).
+    
+    Note: We make the initial state h0 all zeros.
+    We can definitely change this if we wanted to.
+    This is used to continuously give sequences.
+    
+    Run the entire hidden state layer so we can get h.
+    returns h = (N,T,H)
+    """
+    N,T,D = x.shape
+    H,_ = W_hh.shape
+    h = np.zeros((N,T,H))
+    if h0 != None: # Supply an h0 state.
+        h[:,-1,:] = h0
+    
+    for i in xrange(T):
+        h[:,i,:] = rnn_step_forward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b)
+    
+    
+def rnn_backward(x, W_xh, W_hh, b, dout):
+    """
+    UNTESTED
+    Given the following parameters:
+    W_xh = (H,H)
+    x = (N,T,D)
+    W_xh = (D,H)
+    b = (H,)
+    dout = (N,T,H)
+    
+    dW_hh, dW_xh, dh[:,i-1,:], dx, db += rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout)
+    
+    """
+    dW_hh = np.zeros_like(W_hh)
+    dW_xh = np.zeros_like(W_xh)
+    dh = np.zeros_like(dout)
+    dx = np.zeros_like(x)
+    db = np.zeros_like(b)
+    for i in reversed(xrange(T)):
+        dW_hh, dW_xh, dh_temp, dx[:,i,:], db += rnn_step_backward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b, dout)
+        if i - 1 >= 0:
+            dh[:,i-1,:] = dh_temp
+    return dW_hh, dW_xh, dh, dx, db
+        
 def affine_forward(h, W_hy, b):
     """
     Given the following parameters: h, W_hy, b
