@@ -81,7 +81,11 @@ class VanillaRNN:
         # W_hy should be a H x D matrix
         self.params["W_hy"] = orthogonal_init((c("H"), c("D")))
         
-    def loss(self, x):
+        # There are 2 biases: 1 for rnn and 1 for affine.
+        self.params["b_rnn"] = orthogonal_init((c("H"),))
+        self.params["b_affine"] = orthogonal_init((c("D"),))
+        
+    def loss(self, y, h0):
         """
         Note: To run the forward function, we need to have the weights set up. 
         
@@ -97,10 +101,32 @@ class VanillaRNN:
         c = lambda arg: self.constants[arg]
         p = lambda arg: self.params[arg]
         
-        # Step 1: Word embedding:
-        word_matrix = word_embedding_forward(p("words"), x)
+        # Step 1: Word embedding forward:
+        x = word_embedding_forward(p("words"), y)
         
-        # Step 2: 
+        # Step 2: rnn forward:
+        h = rnn_forward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0)
         
-    
+        # Step 3: affine forward:
+        affine = affine_forward(h, p("W_hy"), p("b_affine"))
+        
+        # step 4: softmax forward and backward:
+        loss, dout = softmax(affine, x) 
+        
+        # step 3: affine backward:
+        dh, dW_hy, db_affine = affine_backward(h, p("W_hy"), p("b_affine"), dout)
+        
+        # step 2: rnn backward:
+        dW_hh, dW_xh, dx, db_rnn, dh0 = rnn_backward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0, h, dout)
+        
+        # step 1: Word embedding backward:
+        dwords = word_embedding_backward(dout, words, x)
+        
+        return [(p("words"), dwords), 
+               (p("W_xh"), dW_xh), 
+               (p("W_hh"), dW_hh),
+               (p("W_hy"), dW_hy),
+               (p("b_affine"), db_affine),
+               (p("b_rnn"), db_rnn),
+               (h0, dh0)]
                                               
