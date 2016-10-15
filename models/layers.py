@@ -48,7 +48,7 @@ def word_embedding_backward(dout, words, x):
     
     dout = (N, T, V)
     x = ndarray. Shape = (N,T)
-    words_dim = tuple(D,V)
+    words_dim = (D,V)
     dWords = (D,V)
     We know that the derivative is 1 whenever we just choose the vector at index x[i,j].
     To go backwards, we can say that the specific i-th vector's derivative at dout[x] 
@@ -261,6 +261,63 @@ def affine_backward(h, W_hy, b, dout):
     
     return dh, dW_hy, db
 
+def rnn_affine_forward(h, W_hy, b):
+    """
+    Given the following parameters: h, W_hy, b
+    rnn_affine_rdforwa takes care of rnn situations where there is
+    a temporal argument:
+    
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    h = (N,T,H)
+    W_hy = (H,D)
+    b = (D,)
+    
+    returns (N,T,H)
+    Note: In this case we just happened to have the correct answer
+    by using affine_forward. Only do this for minimum code-rewriting!
+    This might not work 100% of the time.
+    """
+    return affine_forward(h, W_hy, b)
+    
+def rnn_affine_backward(h, W_hy, b, dout):
+    """
+    Given the following parameters: h, W_hy, b, dout
+    rnn_affine_backward takes care of rnn situations where there is
+    a temporal argument:
+    
+    Constants:
+    D = number of unique words in our corpus
+    N = number of samples
+    H = the dimension of hidden cell vector
+    
+    h = (N,T,H)
+    W_hy = (H,D)
+    b = (D,)
+    dout = (N,T,D)
+    
+    **************************************************
+    Note: We see that, for general rule of thumb, 
+    A*B = C where A,B,C are matrices:
+    
+    dA = dC*B.T
+    dB = A.T*dC
+    **************************************************
+    
+    dh = dout * W_hy.T = (N,T,D) * (D,H) = (N,T,H)
+    dW_hy = h.T * dout = (H,T*N) * (N*T,D) = (H,D)
+    db = sum(axis=0, 1) of dout
+    """
+    N,T,H = h.shape
+    dh = dout.dot(W_hy.T)
+    dW_hy = (h.reshape(N*T,H).T).dot(dout.reshape(N*T,-1))
+    db = np.sum(dout, axis = (0,1))
+    
+    return dh, dW_hy, db
+
 def softmax(x, y):
     """
     Softmax is a probabilistic cost function, whereas the domain of the function gets squashed
@@ -316,11 +373,32 @@ def softmax(x, y):
     
     # The derivative splits here, so we have to call upstream numerator derivative dJ1,
     # and the downstream denominator derivative dJ2
-    dJ1 = np.ones((N,D), float)/(denominator[:, np.newaxis] * N)
-    dJ2 = np.array(y_mask, float)/(numerator[:, np.newaxis] * N)
-    dJ = (dJ1 - dJ2)*x_exp    
+    dJ1 = np.ones((N,D), float)/(denominator[:, np.newaxis])
+    dJ2 = np.array(y_mask, float)/(numerator[:, np.newaxis])
+    dJ = (dJ1 - dJ2)*x_exp/N    
     
     return loss, dJ
+
+def rnn_softmax(x, y):
+    """
+    Softmax is a probabilistic cost function, whereas the domain of the function gets squashed
+    to [0,1] and the cost is restrained from [0, inf).
+    
+    This is a special rnn_softmax function where it calculates the softmax score of each temporal score.
+    This changes the x dim from:
+    (N,T,D) to (N*T,D) 
+    (Because we need to keep the one-hot cost area the same dimension, but need to squash down to dim=2)
+    Then, we calculate each score using the normal softmax function, then wrap it up back to the correct shape.
+    """
+    
+    N,T,D = x.shape
+    x = x.reshape(N*T,D) # Change it to 2d array for softmax
+    y = y.ravel() # Change it to a 1d array for softmax
+    loss, dJ = softmax(x, y)
+    loss *= T # We actually divided the loss by (N*T) inside, so we multiply by T outside.
+    dJ *= T # We actually divided the dJ the same way.
+    return loss, dJ.reshape(N,T,D)
+
 
 def SVM(x, y):
     """

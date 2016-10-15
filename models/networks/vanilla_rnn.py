@@ -1,6 +1,6 @@
 import numpy as np
-from layers import *
-from nn_tools import *
+from models.layers import *
+from tools.nn_tools import *
 """
 Now that we have all the layers, we need to import them and kind of use them as
 "lego blocks" for our application purpose.
@@ -54,13 +54,15 @@ Backward pass:
 """
 
 class VanillaRNN:
-    def __init__(self, num_words, words_idx, hidden_dim, word_vec_dim):
+    def __init__(self, num_samples, num_words, time_dim, hidden_dim, word_vec_dim):
         """
         We assume words_idx has the shape (N,T)
         """
-        N,T = words_idx.shape
-        self.constants["N"] = N
-        self.constants["T"] = T
+        self.constants = {}
+        self.params = {}
+        
+        self.constants["N"] = num_samples
+        self.constants["T"] = time_dim
         self.constants["H"] = hidden_dim
         self.constants["V"] = word_vec_dim
         self.constants["D"] = num_words
@@ -93,9 +95,10 @@ class VanillaRNN:
         It does the forward and backwards pass in one call of the function.
         
         Inputs:
-        x = (N,T)
-        x is N samples of T time intervals of words. Each number in x represents
+        y = (N,T)
+        y is N samples of T time intervals of words. Each number in y represents
         an index inside of self.params["words"].
+        h0 = (T,)
         """
         # Save typing 
         c = lambda arg: self.constants[arg]
@@ -108,25 +111,26 @@ class VanillaRNN:
         h = rnn_forward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0)
         
         # Step 3: affine forward:
-        affine = affine_forward(h, p("W_hy"), p("b_affine"))
+        affine = rnn_affine_forward(h, p("W_hy"), p("b_affine"))
         
         # step 4: softmax forward and backward:
-        loss, dout = softmax(affine, x) 
+        loss, dout = rnn_softmax(affine, y) 
         
         # step 3: affine backward:
-        dh, dW_hy, db_affine = affine_backward(h, p("W_hy"), p("b_affine"), dout)
-        
+        dh, dW_hy, db_affine = rnn_affine_backward(h, p("W_hy"), p("b_affine"), dout)
+
         # step 2: rnn backward:
-        dW_hh, dW_xh, dx, db_rnn, dh0 = rnn_backward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0, h, dout)
+        dW_hh, dW_xh, dx, db_rnn, dh0 = rnn_backward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0, h, dh)
         
         # step 1: Word embedding backward:
-        dwords = word_embedding_backward(dout, words, x)
+        dwords = word_embedding_backward(dx, p("words"), y)
         
-        return [(p("words"), dwords), 
-               (p("W_xh"), dW_xh), 
-               (p("W_hh"), dW_hh),
-               (p("W_hy"), dW_hy),
-               (p("b_affine"), db_affine),
-               (p("b_rnn"), db_rnn),
-               (h0, dh0)]
+        # Returns the loss and all the derivatives along with the fields.
+        return (loss, [[p("words"), dwords], 
+               [p("W_xh"), dW_xh], 
+               [p("W_hh"), dW_hh],
+               [p("W_hy"), dW_hy],
+               [p("b_affine"), db_affine],
+               [p("b_rnn"), db_rnn],
+               [h0, dh0]])
                                               

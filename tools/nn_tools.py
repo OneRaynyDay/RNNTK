@@ -9,9 +9,12 @@ orthogonal_init(shape):
     Uses orthogonal random matrices as the starting initialization value for the 
     weights of the network. It works fairly well despite there being no research
     papers about it currently(except for Saxe et al.). 
+    
+TODO:
+variance_init(shape):
 """
 
-def orthogonal_init(shape):
+def orthogonal_init(shape, divisor=100):
     """
     Some intuition on why orthogonal initialization is good:
     For the fact that the matrix A*A' = I, we know that every vector
@@ -19,7 +22,25 @@ def orthogonal_init(shape):
     
     In this case u has variable sized vectors but it spans into all subspaces equally, giving
     a good distribution of vectors to backpropagate on.
+    
+    References
+    ----------
+    .. [1] Saxe, Andrew M., James L. McClelland, and Surya Ganguli.
+           "Exact solutions to the nonlinear dynamics of learning in deep
+           linear neural networks." arXiv preprint arXiv:1312.6120 (2013).
     """
-    W = np.random.randn(*shape)
-    u, s, v = np.linalg.svd(W)
-    return u
+    W = np.random.randn(*shape)/divisor
+    print W
+    if len(W.shape) == 1:
+        return W
+    u, s, v = np.linalg.svd(W, full_matrices=False)
+    if u.shape == shape: 
+        return u 
+    else: 
+        return v.reshape(shape)
+
+def variance_init(shape):
+    """
+    1/sqrt(fan_in)
+    """
+    pass
