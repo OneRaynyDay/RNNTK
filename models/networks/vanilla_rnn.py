@@ -87,7 +87,7 @@ class VanillaRNN:
         self.params["b_rnn"] = orthogonal_init((c("H"),))
         self.params["b_affine"] = orthogonal_init((c("D"),))
         
-    def loss(self, y, h0):
+    def loss(self, x, y, h0):
         """
         Note: To run the forward function, we need to have the weights set up. 
         
@@ -95,8 +95,9 @@ class VanillaRNN:
         It does the forward and backwards pass in one call of the function.
         
         Inputs:
+        x = (N,T)
         y = (N,T)
-        y is N samples of T time intervals of words. Each number in y represents
+        x and y are N samples of T time intervals of words. Each number in y represents
         an index inside of self.params["words"].
         h0 = (T,)
         """
@@ -105,10 +106,10 @@ class VanillaRNN:
         p = lambda arg: self.params[arg]
         
         # Step 1: Word embedding forward:
-        x = word_embedding_forward(p("words"), y)
+        words_chosen = word_embedding_forward(p("words"), x)
         
         # Step 2: rnn forward:
-        h = rnn_forward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0)
+        h = rnn_forward(words_chosen, p("W_xh"), p("W_hh"), p("b_rnn"), h0)
         
         # Step 3: affine forward:
         affine = rnn_affine_forward(h, p("W_hy"), p("b_affine"))
@@ -120,10 +121,10 @@ class VanillaRNN:
         dh, dW_hy, db_affine = rnn_affine_backward(h, p("W_hy"), p("b_affine"), dout)
 
         # step 2: rnn backward:
-        dW_hh, dW_xh, dx, db_rnn, dh0 = rnn_backward(x, p("W_xh"), p("W_hh"), p("b_rnn"), h0, h, dh)
+        dW_hh, dW_xh, dx, db_rnn, dh0 = rnn_backward(words_chosen, p("W_xh"), p("W_hh"), p("b_rnn"), h0, h, dh)
         
         # step 1: Word embedding backward:
-        dwords = word_embedding_backward(dx, p("words"), y)
+        dwords = word_embedding_backward(dx, p("words"), x)
         
         # Returns the loss and all the derivatives along with the fields.
         return (loss, [[p("words"), dwords], 
@@ -132,5 +133,5 @@ class VanillaRNN:
                [p("W_hy"), dW_hy],
                [p("b_affine"), db_affine],
                [p("b_rnn"), db_rnn],
-               [h0, dh0]])
+               [h0, dh0]], h[:,-1,:])
                                               

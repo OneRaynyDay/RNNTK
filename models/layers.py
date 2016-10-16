@@ -360,6 +360,7 @@ def softmax(x, y):
     N,D = x.shape
 
     ### For LOSS ###
+    x -= np.max(x, axis=1, keepdims=True) # subtraction for numeric stability
     y_mask = np.zeros_like(x, int)
     y_mask[np.arange(N), y] = 1
     x_exp = np.exp(x)
