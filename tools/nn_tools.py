@@ -42,5 +42,7 @@ def orthogonal_init(shape, divisor=100):
 def variance_init(shape):
     """
     1/sqrt(fan_in)
+    The shape is (In_out, Out_in), because (In_in, In_out) * (In_out, Out_in)
     """
-    pass
+    W = np.random.randn(*shape)/np.sqrt(shape[0])
+    return W

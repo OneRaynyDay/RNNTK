@@ -128,7 +128,7 @@ def rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout):
     db is (H,).
     (H,) = sum(axis = 0) of dout = (H,)
     """
-    dout = 1-np.tanh(prev_h.dot(W_hh) + x.dot(W_xh) + b)**2
+    dout = dout*(1-(np.tanh(prev_h.dot(W_hh) + x.dot(W_xh) + b)**2))
     dW_hh = (prev_h.T).dot(dout)
     dW_xh = (x.T).dot(dout)
     dprev_h = dout.dot(W_hh.T)
@@ -261,6 +261,51 @@ def affine_backward(h, W_hy, b, dout):
     
     return dh, dW_hy, db
 
+def dropout_forward(x, p = 0.5, mode="train"):
+    """
+    Dropout is a popular regularization technique founded by Geoff Hinton.
+    Its idea is simple: just remove some cells' activation layers.
+    Set them to 0 so that they don't contribute to the overall architecture.
+    
+    This greatly regularizes the nodes and when we want to get the testing result,
+    we just simply multiply each activation by p to allow all of them to be still alive.
+    
+    Given implementation is based on the idea of "inverted dropout", which
+    dropouts and scales in the training process by itself. 
+    
+    Input:
+    x = (N,T,D) in a recurrent neural network. (N,D) otherwise
+    p = probability of dropout. Between 0 and 1.
+    mode = whether we are running the training version or the testing version.
+    
+    returns:
+    mask = (N,T,D) of 0's and 1's, signifying which ones were dropped out. {ONLY during training}
+    x = (N,T,D)
+    """
+    if mode == "train":
+        mask = np.array(np.random.random(x.shape) < p, float)
+        mask /= p # divide by p for the inverted dropout effect.
+        
+        x *= mask
+        return x, mask
+    elif mode == "test":
+        # Note how we didn't have to divide by p this time due to the inverted dropout
+        return x
+
+def dropout_backward(mask, dout, mode="train"):
+    """
+    Backpropagation of dropout is fairly intuitive. If we set the value to 0, then
+    there is literally no gradient passing back. We "snip" them off of the gradients per se.
+    
+    Input:
+    x = (N,T,D) in a recurrent neural network.
+    """
+    if mode == "train":
+        dout *= mask
+        return dout
+    elif mode == "test":
+        return dout
+
 def rnn_affine_forward(h, W_hy, b):
     """
     Given the following parameters: h, W_hy, b
@@ -358,7 +403,6 @@ def softmax(x, y):
     """
     
     N,D = x.shape
-
     ### For LOSS ###
     x -= np.max(x, axis=1, keepdims=True) # subtraction for numeric stability
     y_mask = np.zeros_like(x, int)

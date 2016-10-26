@@ -11,7 +11,6 @@ The working pipeline goes something like this:
 3. Uses its gradients and the associated gradient descent function to update weights.
 4. After running for X epochs, it stops and returns its current model.
 """
-""" STUBS TODO """      
 def adagrad(self, l):
     """ 
         Adagrad is an adaptive learning method. Examine the code below - it's fairly straight forward.
@@ -114,7 +113,24 @@ class Solver:
             self.v = None
             self.beta1 = configs["beta1"]
             self.beta2 = configs["beta2"]
+        self.loss_history = []
+        self.min_loss_model = None
+        self.min_loss = (1 << 31) # int_max
 
     def train(self, l):
+        # first clip the gradients from exploding gradient problem:
+        for pair in l:
+            np.clip(pair[1], -3, 3, out=pair[1])
         self.func(self, l)
+        
+    def step(self, i, loss, l):
+        self.loss_history.append((i,loss))
+        self.train(l)
+        if self.min_loss >= loss:
+            self.min_loss = loss
+            self.min_loss_model = l
+        
+    
+    def get_loss_history(self):
+        return zip(*self.loss_history)
         

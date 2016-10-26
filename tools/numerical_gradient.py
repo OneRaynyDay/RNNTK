@@ -29,7 +29,7 @@ def numerical_gradient_check_scalar(function, x, eps = 1e-5):
     return (function(x+eps) - function(x-eps)) / (2*eps)
 
 # For multivariable -> multivariable. R^n -> R^n, where n can be 1
-def numerical_gradient_check_multivar(function, x, eps = 1e-5):
+def numerical_gradient_check_multivar(function, x, dx, eps = 1e-5):
     # Unroll the vector.
     dims = x.shape
     x = x.ravel()
@@ -37,8 +37,8 @@ def numerical_gradient_check_multivar(function, x, eps = 1e-5):
     epsilon_map = np.zeros_like(x, dtype=np.float32)
     for idx, num in enumerate(x):
         epsilon_map[idx] = eps
-        deriv = (function((x+epsilon_map).reshape(dims)) - function((x-epsilon_map).reshape(dims))) / (2*eps)
-        grad[idx] += np.sum(deriv)
+        deriv = (function((x+epsilon_map).reshape(dims)) - function((x-epsilon_map).reshape(dims)))
+        grad[idx] += np.sum(deriv * dx) / (2*eps)
         epsilon_map[idx] = 0
     
     return grad.reshape(dims)

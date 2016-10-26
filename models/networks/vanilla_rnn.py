@@ -9,7 +9,7 @@ A normal RNN looks like this:
 
 [  ...  Ouput results  ...  ]
    |     |     |     |    |
-[  ...  Softmax layer  ...  ]
+[  ...  Softmax layer(dropout'd)  ...  ]
    |     |     |     |    |
 [  ...  Hidden layers  ...  ]
    |     |     |     |    |
@@ -54,7 +54,7 @@ Backward pass:
 """
 
 class VanillaRNN:
-    def __init__(self, num_samples, num_words, time_dim, hidden_dim, word_vec_dim):
+    def __init__(self, num_samples, num_words, time_dim, hidden_dim, word_vec_dim, dropout_keep_prob = 0.5):
         """
         We assume words_idx has the shape (N,T)
         """
@@ -66,26 +66,29 @@ class VanillaRNN:
         self.constants["H"] = hidden_dim
         self.constants["V"] = word_vec_dim
         self.constants["D"] = num_words
+        self.constants["p"] = dropout_keep_prob
         
         # Save typing 
         c = lambda arg: self.constants[arg]
         p = lambda arg: self.params[arg]
         
+        func_init = variance_init
+        
         # words
-        self.params["words"] = orthogonal_init((c("D"), c("V")))
+        self.params["words"] = func_init((c("D"), c("V")))
         
         # W_xh should be a V x H matrix
-        self.params["W_xh"] = orthogonal_init((c("V"), c("H")))
+        self.params["W_xh"] = func_init((c("V"), c("H")))
         
         # W_hh should be a H x H matrix
-        self.params["W_hh"] = orthogonal_init((c("H"), c("H")))
+        self.params["W_hh"] = func_init((c("H"), c("H")))
         
         # W_hy should be a H x D matrix
-        self.params["W_hy"] = orthogonal_init((c("H"), c("D")))
+        self.params["W_hy"] = func_init((c("H"), c("D")))
         
         # There are 2 biases: 1 for rnn and 1 for affine.
-        self.params["b_rnn"] = orthogonal_init((c("H"),))
-        self.params["b_affine"] = orthogonal_init((c("D"),))
+        self.params["b_rnn"] = np.zeros((c("H"),))
+        self.params["b_affine"] = np.zeros((c("D"),))
         
     def loss(self, x, y, h0):
         """
@@ -134,4 +137,55 @@ class VanillaRNN:
                [p("b_affine"), db_affine],
                [p("b_rnn"), db_rnn],
                [h0, dh0]], h[:,-1,:])
+
+    def load(self, args):
+        """
+        Reloads the model into a previous state.
+        
+        """
+        pass
+    def predict(self, x, seq_len=6, h0=None):
+        """
+        Actually does the prediction using trained RNN.
+        
+        Input:
+        x : a single word idx.
+        
+        Output:
+        output : a numpy array of shape (seq_len,) that represents the sequence.
+        """
+        output = []
+        c = lambda arg: self.constants[arg]
+        p = lambda arg: self.params[arg]
+        if h0 == None:
+            prev_h = np.zeros((1, c("H")))
+        else:
+            prev_h = h0
+            # Save typing 
+            c = lambda arg: self.constants[arg]
+            p = lambda arg: self.params[arg]
+
+        x = np.array([[x]])
+
+        for i in xrange(seq_len):
+            # Step 1: Word embedding forward:
+            words_chosen = word_embedding_forward(p("words"), x)
+
+            # Step 2: rnn forward:
+            h = rnn_step_forward(prev_h, p("W_hh"), words_chosen, p("W_xh"), p("b_rnn"))
+
+            # Step 3: affine forward:
+            affine = rnn_affine_forward(h, p("W_hy"), p("b_affine"))
+
+            # step 4: softmax forward:
+            softmax_scores = np.exp(affine)/np.sum(np.exp(affine))
+
+            x = np.random.choice(c("D"), p=softmax_scores.ravel())
+            output.append(x)
+            x = np.array([[x]])
+            prev_h = h
+
+        return output
+        
+    
                                               
