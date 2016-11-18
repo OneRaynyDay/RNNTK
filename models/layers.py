@@ -7,6 +7,30 @@ we also have affine and word_embedding layers(but are not a part of our recurren
 
 """
 
+def sigmoid(x):
+    """
+    Numerically-stable sigmoid function.
+    
+    Recall that sigmoid is equal to:
+    1/(1+exp(-x))
+    
+    However, if z is negative then we will have gigantic values which
+    may not be safe for floating points. No explosions, please!
+    
+    Recall that if we multiply both numerator and denominator by exp(z):
+    (1*exp(x))/((1+exp(-x)*exp(x))
+    
+    We get:
+    exp(x)/(exp(x) + 1)
+    
+    This is very numerically stable as all the numbers are guarranteed to be
+    less than 1. GOOGLE PLS HIRE ME 
+    """
+    z = x.copy()
+    z[ x >= 0 ] = 1 / (1 + np.exp(-z[ x >= 0 ]))
+    z[ x < 0 ] = np.exp(z[ x < 0 ]) / (1 + np.exp(z[ x < 0 ]))
+    return z
+
 def word_embedding_forward(words, x):
     """ 
     Given the following parameters: Words, x
@@ -137,12 +161,111 @@ def rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout):
     
     return dW_hh, dW_xh, dprev_h, dx, db
 
+def lstm_step_forward(prev_h, W_hh, x, W_xh, b, prev_c):
+    """
+    LSTM cells are much more complicated than vanilla RNN cells.
+    LSTM cells have 4 properties:
+    i, f, o, g.
+    They're acquired via taking sigmoid() and tanh() of 
+    [W_ixh, W_ihh], [W_fxh, W_fhh], ...
+    With [x, prev_h].
+    
+    In our inputs, we have 
+    X = (N,V)
+    prev_h = (N,H)
+    prev_c = (N,H)
+    W_xh = (V,4H)
+    W_hh = (H,4H)
+    b = (4H,)
+    """
+    _, H = prev_h.shape
+    cache = {} # Too many fkin values dude
+    
+    dot_prod = x.dot(W_xh) + prev_h.dot(W_hh) + b # Gives us N,4H
+    
+    # To get i,f,o,g, we need to extract out the 
+    # individual columns and apply transformations:
+    i = sigmoid(dot_prod[:,:H])
+    f = sigmoid(dot_prod[:,H:H*2])
+    o = sigmoid(dot_prod[:,H*2:H*3])
+    g = np.tanh(dot_prod[:,H*3:])
+    
+    # Now, we need to use these values to get c and h.
+    c = f * prev_c + (i * g)
+    h = np.tanh(c) * o
+    
+    cache["i"] = i
+    cache["f"] = f
+    cache["o"] = o
+    cache["g"] = g
+    cache["c"] = c
+    cache["prev_c"] = prev_c
+    cache["prev_h"] = prev_h
+    
+    return cache, c, h
+
+def lstm_step_backward(W_hh, x, W_xh, b, cache, dh, dc):
+    """
+    LSTM cells have shitty backprop - they're really long. 
+    We brought back the cache so we don't have to compute the values again.
+    
+    This is subject to optimization, obviously, but as Donald Knuth or some1 said:
+    "Premature optimization is the root of all evil".
+    """
+    _, H = cache["prev_h"].shape
+    
+    # We should start at dh - that one's longer
+    _1 = dh*cache["o"]
+    _2 = _1*(1-np.tanh(cache["c"])**2)
+    _3 = _2 + dc
+    _4 = _3
+    _5 = _3
+    _6 = _5*cache["i"]
+    _7 = _6*(1-cache["g"]**2) # g gate
+    _8 = _5 * cache["g"]
+    _9 = _8 * cache["i"] * (1-cache["i"]) # i gate
+    _10 = _4 * cache["prev_c"]
+    _11 = _10 * cache["f"] * (1-cache["f"]) # f gate
+    dprev_c = _4 * cache["f"] # This is also _12.
+    _13 = dh*np.tanh(cache["c"])
+    _14 = _13 * cache["o"] * (1-cache["o"]) # o gate
+    
+    # Because we're going to be doing the same tiling process for each gate,
+    # might as well tile them all together right now.
+    tiled = np.concatenate([_9, _11, _14, _7], axis=1)
+        
+    # Now that we have the LSTM structure backprop done, we need to 
+    # aggregate them inside of db, dW_hh, dW_xh, dprev_h and dx.
+    db = np.sum(tiled, axis=0)
+        
+    # If dW_hh is in the shape H,4H, then we will take each slice of H,xH:yH
+    # to be a slice of the specific gate. 
+    # prev_h is in the shape of N,H. prev_h.T.dot(derivative) 
+    # dW_hh = prev_h.T.dot(_9
+    dW_hh = cache["prev_h"].T.dot(tiled)
+
+    # If dW_xh is in the shape V,4H, then we will take each slice of V,xH:yH
+    # to be a slice of the specific gate.
+    # x is in the shape of N,V. x.T.dot(derivative)
+    dW_xh = x.T.dot(tiled)
+    
+    # dx is in the shape of N,V, and we use dx in every single gate.
+    # W_xh is in the shape of V,H. derivative.dot(W_xh.T) 
+    dx = tiled.dot(W_xh.T)
+    
+    # dprev_h is in the shape of N,h, and we use dprev_h in every single gate.
+    # W_hh is in the shape of H,H. derivative.dot(W_hh.T)
+    dprev_h = tiled.dot(W_hh.T)
+    
+    return dW_hh, dW_xh, dprev_h, dx, db, dprev_c
+    
+    
 def rnn_forward(x, W_xh, W_hh, b, h0=None):
     """
     Given the following parameters: 
     h0 = (N,H)
     W_hh = (H,H)
-    x = (N,T,D)
+    x = (N,T,V)
     W_xh = (D,H)
     b = (H,)
     
@@ -155,7 +278,7 @@ def rnn_forward(x, W_xh, W_hh, b, h0=None):
     Run the entire hidden state layer so we can get h.
     returns h = (N,T,H)
     """
-    N,T,D = x.shape
+    N,T,V = x.shape
     H,_ = W_hh.shape
     h = np.zeros((N,T,H))
     if h0 != None: # Supply an h0 state.
@@ -169,7 +292,7 @@ def rnn_backward(x, W_xh, W_hh, b, h0, h, dout):
     """
     Given the following parameters:
     W_xh = (H,H)
-    x = (N,T,D)
+    x = (N,T,V)
     W_xh = (D,H)
     b = (H,)
     h = (N,T,H)
@@ -178,7 +301,7 @@ def rnn_backward(x, W_xh, W_hh, b, h0, h, dout):
     dW_hh, dW_xh, dh[:,i-1,:], dx, db += rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout)
     
     """
-    N,T,D = x.shape
+    N,T,V = x.shape
     H,_ = W_hh.shape
     dW_hh = np.zeros_like(W_hh)
     dW_xh = np.zeros_like(W_xh)
@@ -204,6 +327,89 @@ def rnn_backward(x, W_xh, W_hh, b, h0, h, dout):
 
     return dW_hh, dW_xh, dx, db, dh0
         
+def lstm_forward(x, W_xh, W_hh, b, h0=None):
+    """
+    Given the following parameters: 
+    h0 = (N,H)
+    W_hh = (H,4H)
+    x = (N,T,D)
+    W_xh = (D,4H)
+    b = (H,)
+    
+    We make h = (N,T,H).
+    
+    Note: We can make the initial state h0 all zeros.
+    We can definitely change this if we wanted to.
+    This is used to continuously give sequences.
+    
+    We also pass in the value c0 = 0. This is a hidden vector that's
+    not exposed. It's always the zero vector to start with, although 
+    I'm not sure what the effect of not passing back past epochs 
+    really is on the result.
+    
+    Run the entire hidden state layer so we can get h.
+    returns h = (N,T,H)
+    """
+    N,T,V = x.shape
+    H,_ = W_hh.shape
+    h, c = np.zeros((N,T,H)), np.zeros((N,T,H))
+    caches = []
+    c0 = np.zeros((N,H))
+    if h0 == None: # Supply an h0 state.
+        h0 = np.zeros((N,H))    
+    
+    for i in xrange(T):
+        if i == 0:
+            cache, c[:,i,:], h[:,i,:] = lstm_step_forward(h0, W_hh, x[:,i,:], W_xh, b, c0)
+        else:
+            cache, c[:,i,:], h[:,i,:] = lstm_step_forward(h[:,i-1,:], W_hh, x[:,i,:], W_xh, b, c[:,i-1,:])
+        caches.append(cache)
+    return caches, h
+    
+def lstm_backward(x, W_xh, W_hh, b, h0, caches, dout):
+    """
+    Given the following parameters:
+    W_xh = (H,H)
+    x = (N,T,V)
+    W_xh = (D,H)
+    b = (H,)
+    h = (N,T,H)
+    dout = (N,T,H)
+    
+    dW_hh, dW_xh, dh[:,i-1,:], dx, db += rnn_step_backward(prev_h, W_hh, x, W_xh, b, dout)
+    """
+
+    N,T,V = x.shape
+    H,_ = W_hh.shape
+    dW_hh = np.zeros_like(W_hh)
+    dW_xh = np.zeros_like(W_xh)
+    #dh = dout
+    dc = np.zeros_like(dout)
+    dx = np.zeros_like(x)
+    db = np.zeros_like(b)
+    dprev_h = np.zeros((N,H))
+    
+    # rnn_step_backward args: W_hh, x, W_xh, b, cache, dh, dc 
+    for i in reversed(xrange(T)):
+        # Because python does not allow multiple += assignments via unpacked tuples
+        # at the same time, we have to assign temporary values in order for this
+        # to work properly.
+        _dW_hh, _dW_xh, dprev_h, _dx, _db, _dc = lstm_step_backward(W_hh, 
+                                                                x[:,i,:], 
+                                                                W_xh, 
+                                                                b, 
+                                                                caches[i], 
+                                                                dout[:,i,:]+dprev_h, 
+                                                                dc[:,i,:])
+        dc[:,i-1,:] = _dc
+        dW_hh += _dW_hh
+        dW_xh += _dW_xh
+        dx[:,i,:] += _dx
+        db += _db
+    
+    dh0 = dprev_h
+    return dW_hh, dW_xh, dx, db, dh0
+    
 def affine_forward(h, W_hy, b):
     """
     Given the following parameters: h, W_hy, b

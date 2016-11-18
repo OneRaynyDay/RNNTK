@@ -54,7 +54,7 @@ Backward pass:
 """
 
 class VanillaRNN:
-    def __init__(self, num_samples, num_words, time_dim, hidden_dim, word_vec_dim, dropout_keep_prob = 0.5):
+    def __init__(self, num_samples, num_words, time_dim, hidden_dim, word_vec_dim, l2_lambda = 0, dropout_keep_prob = 0.5):
         """
         We assume words_idx has the shape (N,T)
         """
@@ -67,7 +67,7 @@ class VanillaRNN:
         self.constants["V"] = word_vec_dim
         self.constants["D"] = num_words
         self.constants["p"] = dropout_keep_prob
-        
+        self.constants["l2_lambda"] = l2_lambda
         # Save typing 
         c = lambda arg: self.constants[arg]
         p = lambda arg: self.params[arg]
@@ -118,7 +118,13 @@ class VanillaRNN:
         affine = rnn_affine_forward(h, p("W_hy"), p("b_affine"))
         
         # step 4: softmax forward and backward:
-        loss, dout = rnn_softmax(affine, y) 
+        loss, dout = rnn_softmax(affine, y)
+        
+        # step 4.5: Add up the loss with the regularization parameters:
+        # Question: Why do we not add the biases? It's because the bias is a discriminant
+        # and it allows for the net to learn non-linear functions.
+        # If we try to minimize the bias then we're limiting the expressiveness of the neural net.
+        loss += c("l2_lambda")*(np.sum(p("W_xh")**2) + np.sum(p("W_hh")**2) + np.sum(p("W_hy")**2))/2
         
         # step 3: affine backward:
         dh, dW_hy, db_affine = rnn_affine_backward(h, p("W_hy"), p("b_affine"), dout)
@@ -128,6 +134,11 @@ class VanillaRNN:
         
         # step 1: Word embedding backward:
         dwords = word_embedding_backward(dx, p("words"), x)
+        
+        # step 0.5: Add up the regularization losses
+        dW_xh += c("l2_lambda")*(p("W_xh"))
+        dW_hh += c("l2_lambda")*(p("W_hh"))
+        dW_hy += c("l2_lambda")*(p("W_hy"))
         
         # Returns the loss and all the derivatives along with the fields.
         return (loss, [[p("words"), dwords], 
@@ -161,9 +172,6 @@ class VanillaRNN:
             prev_h = np.zeros((1, c("H")))
         else:
             prev_h = h0
-            # Save typing 
-            c = lambda arg: self.constants[arg]
-            p = lambda arg: self.params[arg]
 
         x = np.array([[x]])
 
